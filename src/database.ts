@@ -578,6 +578,20 @@ export class WhoopDatabase {
 		`).all(days) as DbWorkout[];
 	}
 
+	/** Raw rows for a personal data export (no tokens). */
+	exportRaw(days: number): Record<string, unknown[]> {
+		const since = `-${days} days`;
+		const q = (table: string, col: string) => this.db.prepare(
+			`SELECT * FROM ${table} WHERE ${col} >= DATE('now', ?) ORDER BY ${col}`
+		).all(since);
+		return {
+			cycles: q('cycles', 'start_time'),
+			recovery: q('recovery', 'created_at'),
+			sleep: q('sleep', 'start_time'),
+			workouts: q('workouts', 'start_time'),
+		};
+	}
+
 	close(): void {
 		this.db.close();
 	}

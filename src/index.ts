@@ -142,6 +142,9 @@ function getStrainZone(strain: number): string {
 
 const MAX_DAYS = 730;
 
+// One-time download links for a personal data export (valid 10 minutes, single use).
+const exportTokens = new Map<string, { days: number; expires: number }>();
+
 function validateDays(value: unknown): number {
 	if (value === undefined || value === null) return 14;
 	const num = typeof value === 'number' ? value : Number.parseInt(String(value), 10);
@@ -192,6 +195,15 @@ function createMcpServer(): Server {
 				inputSchema: {
 					type: 'object',
 					properties: { days: { type: 'number', description: 'Number of days to analyze (default: 14, max: 730)' } },
+					required: [],
+				},
+			},
+			{
+				name: 'get_export_link',
+				description: 'Create a one-time link (valid 10 minutes) to download raw WHOOP data (cycles, recovery, sleep, workouts incl. HR zones) as JSON.',
+				inputSchema: {
+					type: 'object',
+					properties: { days: { type: 'number', description: 'How many days back (default 90, max 730)' } },
 					required: [],
 				},
 			},
@@ -528,6 +540,14 @@ function createMcpServer(): Server {
 					return { content: [{ type: 'text', text: response }] };
 				}
 
+				case 'get_export_link': {
+					const days = typedArgs.days === undefined ? 90 : validateDays(typedArgs.days);
+					const token = crypto.randomUUID();
+					exportTokens.set(token, { days, expires: Date.now() + 10 * 60 * 1000 });
+					const base = new URL(config.redirectUri).origin;
+					return { content: [{ type: 'text', text: `${base}/export?token=${token}\n(single use, expires in 10 minutes, ${days} days of data)` }] };
+				}
+
 				case 'sync_data': {
 					const tokens = db.getTokens();
 					if (!tokens) {
@@ -692,7 +712,7 @@ async function main(): Promise<void> {
 		const app = express();
 		const accessKey = process.env.ACCESS_KEY;
 		app.use((req, res, next) => {
-			if (req.path === '/callback' || req.path === '/health') return next();
+			if (req.path === '/callback' || req.path === '/health' || req.path === '/export') return next();
 			const prefix = `/${accessKey}`;
 			if (!accessKey || !req.path.startsWith(`${prefix}/`)) {
 				res.status(404).send('Not found');
@@ -719,6 +739,17 @@ async function main(): Promise<void> {
 				process.stderr.write(`[whoop] Authorization callback failed: ${safeErrorSummary(error)}\n`);
 				res.status(500).send('Authorization failed. Please try again.');
 			}
+		});
+
+		app.get('/export', (req: Request, res: Response) => {
+			const token = typeof req.query.token === 'string' ? req.query.token : '';
+			const entry = exportTokens.get(token);
+			exportTokens.delete(token);
+			if (!entry || entry.expires < Date.now()) {
+				res.status(404).send('Not found');
+				return;
+			}
+			res.json({ exported_at: new Date().toISOString(), days: entry.days, ...db.exportRaw(entry.days) });
 		});
 
 		app.get('/health', (_req: Request, res: Response) => {
