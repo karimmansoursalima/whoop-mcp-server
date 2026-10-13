@@ -393,7 +393,7 @@ export class WhoopDatabase {
 				stmt.run(
 					w.id,
 					w.user_id,
-					w.sport_id,
+					w.sport_id ?? -1, // some older WHOOP workouts have no sport_id
 					w.sport_name ?? null,
 					w.start,
 					w.end,
