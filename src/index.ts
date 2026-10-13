@@ -140,11 +140,13 @@ function getStrainZone(strain: number): string {
 	return 'Light (0-9)';
 }
 
+const MAX_DAYS = 730;
+
 function validateDays(value: unknown): number {
 	if (value === undefined || value === null) return 14;
 	const num = typeof value === 'number' ? value : Number.parseInt(String(value), 10);
 	if (Number.isNaN(num) || num < 1) return 14;
-	return Math.min(num, 90);
+	return Math.min(num, MAX_DAYS);
 }
 
 function validateBoolean(value: unknown): boolean {
@@ -171,7 +173,7 @@ function createMcpServer(): Server {
 				description: 'Get recovery score trends over time, including HRV and resting heart rate patterns.',
 				inputSchema: {
 					type: 'object',
-					properties: { days: { type: 'number', description: 'Number of days to analyze (default: 14, max: 90)' } },
+					properties: { days: { type: 'number', description: 'Number of days to analyze (default: 14, max: 730)' } },
 					required: [],
 				},
 			},
@@ -180,7 +182,7 @@ function createMcpServer(): Server {
 				description: 'Get detailed sleep analysis including duration, stages, efficiency, and sleep debt.',
 				inputSchema: {
 					type: 'object',
-					properties: { days: { type: 'number', description: 'Number of days to analyze (default: 14, max: 90)' } },
+					properties: { days: { type: 'number', description: 'Number of days to analyze (default: 14, max: 730)' } },
 					required: [],
 				},
 			},
@@ -189,7 +191,7 @@ function createMcpServer(): Server {
 				description: 'Get training strain history and workout data.',
 				inputSchema: {
 					type: 'object',
-					properties: { days: { type: 'number', description: 'Number of days to analyze (default: 14, max: 90)' } },
+					properties: { days: { type: 'number', description: 'Number of days to analyze (default: 14, max: 730)' } },
 					required: [],
 				},
 			},
@@ -198,7 +200,7 @@ function createMcpServer(): Server {
 				description: 'Manually trigger a data sync from Whoop.',
 				inputSchema: {
 					type: 'object',
-					properties: { full: { type: 'boolean', description: 'Force a full 90-day sync (default: false)' } },
+					properties: { full: { type: 'boolean', description: 'Force a full sync (default: false)' }, days: { type: 'number', description: 'With full=true: how many days back to sync (default 90, max 730)' } },
 					required: [],
 				},
 			},
@@ -212,7 +214,7 @@ function createMcpServer(): Server {
 				description: 'Get nap data including duration, efficiency, sleep stages, and restorative sleep.',
 				inputSchema: {
 					type: 'object',
-					properties: { days: { type: 'number', description: 'Number of days to analyze (default: 14, max: 90)' } },
+					properties: { days: { type: 'number', description: 'Number of days to analyze (default: 14, max: 730)' } },
 					required: [],
 				},
 			},
@@ -221,7 +223,7 @@ function createMcpServer(): Server {
 				description: 'Get detailed workout data including sport, duration, strain, heart rate zones, distance, and calories.',
 				inputSchema: {
 					type: 'object',
-					properties: { days: { type: 'number', description: 'Number of days to analyze (default: 14, max: 90)' } },
+					properties: { days: { type: 'number', description: 'Number of days to analyze (default: 14, max: 730)' } },
 					required: [],
 				},
 			},
@@ -537,7 +539,8 @@ function createMcpServer(): Server {
 					let stats;
 
 					if (full) {
-						stats = await sync.syncDays(90);
+						const backDays = typedArgs.days === undefined ? 90 : validateDays(typedArgs.days);
+						stats = await sync.syncDays(backDays);
 					} else {
 						const result = await sync.smartSync();
 						if (result.type === 'skip') {
