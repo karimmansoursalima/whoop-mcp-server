@@ -10,6 +10,7 @@ import { WhoopSync } from './sync.js';
 interface ToolArguments {
 	days?: number;
 	full?: boolean;
+	timezone?: string;
 }
 
 const config = {
@@ -208,6 +209,18 @@ function createMcpServer(): Server {
 				},
 			},
 			{
+				name: 'get_daily_csv',
+				description: 'Compact CSV of daily data (recovery, HRV, RHR, sleep, bed/wake time, day strain) and every workout with HR-zone minutes, dated in a given timezone. For building dashboards.',
+				inputSchema: {
+					type: 'object',
+					properties: {
+						days: { type: 'number', description: 'How many days back (default 90, max 730)' },
+						timezone: { type: 'string', description: 'IANA timezone for dates/times, e.g. Africa/Cairo (default UTC)' },
+					},
+					required: [],
+				},
+			},
+			{
 				name: 'sync_data',
 				description: 'Manually trigger a data sync from Whoop.',
 				inputSchema: {
@@ -247,7 +260,7 @@ function createMcpServer(): Server {
 		const typedArgs = (args ?? {}) as ToolArguments;
 
 		try {
-			const dataTools = ['get_today', 'get_recovery_trends', 'get_sleep_analysis', 'get_strain_history', 'get_nap_data', 'get_workout_details'];
+			const dataTools = ['get_today', 'get_daily_csv', 'get_recovery_trends', 'get_sleep_analysis', 'get_strain_history', 'get_nap_data', 'get_workout_details'];
 			if (dataTools.includes(name)) {
 				const tokens = db.getTokens();
 				if (!tokens) {
@@ -546,6 +559,40 @@ function createMcpServer(): Server {
 					exportTokens.set(token, { days, expires: Date.now() + 10 * 60 * 1000 });
 					const base = new URL(config.redirectUri).origin;
 					return { content: [{ type: 'text', text: `${base}/export?token=${token}\n(single use, expires in 10 minutes, ${days} days of data)` }] };
+				}
+
+				case 'get_daily_csv': {
+					const days = typedArgs.days === undefined ? 90 : validateDays(typedArgs.days);
+					const tz = typeof typedArgs.timezone === 'string' && typedArgs.timezone ? typedArgs.timezone : 'UTC';
+					try { new Intl.DateTimeFormat('en', { timeZone: tz }); } catch { throw new McpError(ErrorCode.InvalidParams, 'Unknown timezone'); }
+					const day = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+					const hm = (iso: string) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso));
+					const raw = db.exportRaw(days) as Record<string, Array<Record<string, any>>>;
+					const sleepById = new Map(raw.sleep.map((x) => [String(x.id), x]));
+					const cycleById = new Map(raw.cycles.map((x) => [Number(x.id), x]));
+					const n = (v: unknown, d = 1) => (v === null || v === undefined ? '' : Number(v).toFixed(d));
+					const lines: string[] = ['# DAYS (date = wake-up day)', 'date,recovery,hrv,rhr,sleep_h,sleep_perf,sleep_cons,bed,wake,day_strain'];
+					for (const r of raw.recovery) {
+						if (r.recovery_score === null || r.recovery_score === undefined) continue;
+						const sl = r.sleep_id ? sleepById.get(String(r.sleep_id)) : undefined;
+						const cy = cycleById.get(Number(r.id));
+						const sleepH = sl && sl.total_in_bed_milli != null ? (sl.total_in_bed_milli - (sl.total_awake_milli ?? 0)) / 3600000 : null;
+						lines.push([
+							sl ? day(sl.end_time) : day(r.created_at), r.recovery_score, n(r.hrv_rmssd), r.resting_hr ?? '',
+							n(sleepH, 2), n(sl?.sleep_performance, 0), n(sl?.sleep_consistency, 0),
+							sl ? hm(sl.start_time) : '', sl ? hm(sl.end_time) : '', n(cy?.strain),
+						].join(','));
+					}
+					lines.push('', '# WORKOUTS (minutes per HR zone z0..z5)', 'date,start,sport,min,strain,avg_hr,z0,z1,z2,z3,z4,z5');
+					const m = (v: unknown) => (v === null || v === undefined ? '' : Math.round(Number(v) / 60000));
+					for (const w of raw.workouts) {
+						const mins = Math.round((new Date(w.end_time).getTime() - new Date(w.start_time).getTime()) / 60000);
+						lines.push([
+							day(w.start_time), hm(w.start_time), w.sport_name ?? w.sport_id, mins, n(w.strain), w.avg_hr ?? '',
+							m(w.zone_zero_milli), m(w.zone_one_milli), m(w.zone_two_milli), m(w.zone_three_milli), m(w.zone_four_milli), m(w.zone_five_milli),
+						].join(','));
+					}
+					return { content: [{ type: 'text', text: lines.join('\n') }] };
 				}
 
 				case 'sync_data': {
