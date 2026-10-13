@@ -404,12 +404,12 @@ export class WhoopDatabase {
 					w.score?.kilojoule ?? null,
 					w.score?.distance_meter ?? null,
 					w.score?.altitude_gain_meter ?? null,
-					w.score?.zone_duration?.zone_zero_milli ?? null,
-					w.score?.zone_duration?.zone_one_milli ?? null,
-					w.score?.zone_duration?.zone_two_milli ?? null,
-					w.score?.zone_duration?.zone_three_milli ?? null,
-					w.score?.zone_duration?.zone_four_milli ?? null,
-					w.score?.zone_duration?.zone_five_milli ?? null
+					(w.score?.zone_durations ?? w.score?.zone_duration)?.zone_zero_milli ?? null,
+					(w.score?.zone_durations ?? w.score?.zone_duration)?.zone_one_milli ?? null,
+					(w.score?.zone_durations ?? w.score?.zone_duration)?.zone_two_milli ?? null,
+					(w.score?.zone_durations ?? w.score?.zone_duration)?.zone_three_milli ?? null,
+					(w.score?.zone_durations ?? w.score?.zone_duration)?.zone_four_milli ?? null,
+					(w.score?.zone_durations ?? w.score?.zone_duration)?.zone_five_milli ?? null
 				);
 			}
 		});
