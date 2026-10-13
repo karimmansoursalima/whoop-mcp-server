@@ -687,6 +687,17 @@ async function main(): Promise<void> {
 		process.stderr.write('Whoop MCP server running on stdio\n');
 	} else {
 		const app = express();
+		const accessKey = process.env.ACCESS_KEY;
+		app.use((req, res, next) => {
+			if (req.path === '/callback' || req.path === '/health') return next();
+			const prefix = `/${accessKey}`;
+			if (!accessKey || !req.path.startsWith(`${prefix}/`)) {
+				res.status(404).send('Not found');
+				return;
+			}
+			req.url = req.url.slice(prefix.length);
+			next();
+		});
 		app.use((req, res, next) => { if (req.path === '/mcp' || req.path === STATELESS_PATH) return next(); express.json()(req, res, next); });
 
 		app.get('/callback', async (req: Request, res: Response) => {
@@ -785,7 +796,7 @@ async function main(): Promise<void> {
 			res.status(410).send('SSE endpoint deprecated. Use /mcp with Streamable HTTP transport.');
 		});
 
-		const server = app.listen(config.port, '127.0.0.1', () => {
+		const server = app.listen(config.port, '0.0.0.0', () => {
 			process.stdout.write(`Whoop MCP server running on http://127.0.0.1:${config.port}\n`);
 		});
 
